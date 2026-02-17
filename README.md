@@ -1,5 +1,7 @@
 # AI Agent 综合项目开发仓库
 
+##队名：海底小纵队 成员：蔡世杰 吴家秀
+
 ## 项目概述
 
 本仓库面向机器人实验室成员，聚焦 AI Agent 核心能力落地，通过 4 个递进阶段完成「自定义 AI Agent」综合项目。项目不强制绑定特定框架，核心目标是掌握「需求分析→任务拆解→工具设计→LLM 调用→记忆 + 错误处理」的 Agent 开发全流程，最终落地一个可运行、可演示的自定义 Agent。
@@ -178,4 +180,5 @@ https://ollama.com/
 4.LangChain 框架
 
 https://docs.langchain.com/oss/python/langchain/install
+
 
