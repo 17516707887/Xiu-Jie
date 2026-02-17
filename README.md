@@ -1,6 +1,6 @@
 # AI Agent 综合项目开发仓库
 
-##队名：海底小纵队 成员：蔡世杰 吴家秀
+队名：海底小纵队 成员：蔡世杰 吴家秀
 
 ## 项目概述
 
@@ -180,5 +180,6 @@ https://ollama.com/
 4.LangChain 框架
 
 https://docs.langchain.com/oss/python/langchain/install
+
 
 
