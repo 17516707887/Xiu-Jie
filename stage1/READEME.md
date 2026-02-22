@@ -14,5 +14,7 @@
 ## 3. 遇到的问题及解决方法
 
 - ImportError: cannot import name 'TOOLS'  文件名与目录名冲突,Python优先导入目录而非文件。 解决：重命名冲突目录，或修改导入语句为相对导入。
+
 -InternalError: Algo.InvalidParameter  工具格式不符合千问API要求。 解决：为每个工具添加 type: "function" ，并将 name 、 description 等字段包裹在 function 字典内。 
+
 -天气工具无法获取数据，心知天气API Key配置错误或城市名格式不支持。 解决：更换为 wttr.in 公开接口，无需Key且支持中文城市名。
