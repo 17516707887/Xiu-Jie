@@ -1,6 +1,5 @@
 """
-AI Agent 阶段3：任务规划与多工具协作（完整拆解版）
-核心：强制分步拆解需求，确保天气/快递费/日期/出行建议都独立调用
+AI Agent 阶段3：任务规划与多工具协作
 文件名：agent_stage3.py
 """
 import dashscope
@@ -8,18 +7,16 @@ from dashscope import Generation
 import re
 import os
 from dotenv import load_dotenv
-# 导入本地工具模块
-from m_tools import TOOL_FUNCTIONS
+# 改为导入整个m_tools模块，而非单独变量（核心修复）
+import m_tools
 
 # ===================== 初始化配置 =====================
-# 加载.env文件中的环境变量（千问API Key）
 load_dotenv()
-# 配置千问大模型API Key（请确保.env文件中有DASHSCOPE_API_KEY）
 dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
 if not dashscope.api_key:
     raise ValueError("❌ 请在.env文件中配置DASHSCOPE_API_KEY（阿里云千问大模型API密钥）")
 
-# ===================== 核心函数1：解析LLM返回的工具调用步骤 =====================
+# ===================== 核心函数1：解析LLM返回的工具调用步骤（完全保留） =====================
 def parse_tool_steps(llm_response: str) -> list:
     """
     解析千问返回的工具调用步骤，提取工具名称和参数
@@ -92,20 +89,20 @@ def parse_tool_steps(llm_response: str) -> list:
     
     return tool_steps
 
-# ===================== 核心函数2：调用指定工具 =====================
+# ===================== 核心函数2：调用指定工具（改为访问m_tools.TOOL_FUNCTIONS） =====================
 def call_tool(tool_name: str, params: dict) -> str:
     """调用指定的工具函数，返回执行结果"""
-    if tool_name not in TOOL_FUNCTIONS:
-        return f"❌ 工具【{tool_name}】不存在，支持的工具：{list(TOOL_FUNCTIONS.keys())}"
+    if tool_name not in m_tools.TOOL_FUNCTIONS:
+        return f"❌ 工具【{tool_name}】不存在，支持的工具：{list(m_tools.TOOL_FUNCTIONS.keys())}"
     
     try:
-        tool_func = TOOL_FUNCTIONS[tool_name]
+        tool_func = m_tools.TOOL_FUNCTIONS[tool_name]
         result = tool_func(** params)
         return result
     except Exception as e:
         return f"⚠️ 工具【{tool_name}】调用失败：{str(e)[:30]}"
 
-# ===================== 核心函数3：整合工具结果为自然语言 =====================
+# ===================== 核心函数3：整合工具结果为自然语言（完全保留） =====================
 def integrate_results(user_input: str, tool_results: list) -> str:
     """将多个工具的执行结果整合为流畅的自然语言回答"""
     # 系统提示：定义整合规则
@@ -143,10 +140,25 @@ def integrate_results(user_input: str, tool_results: list) -> str:
                 fallback_answer += f"{idx+1}. {res}\n"
         return fallback_answer
 
-# ===================== 核心函数4：Agent主流程（修复拆解步骤不完整） =====================
+# ===================== 核心函数4：Agent主流程（修复last_city访问方式） =====================
 def agent_run(user_input: str) -> str:
     """Agent主运行流程：拆解需求→解析步骤→调用工具→整合结果"""
-    # 🔥 核心修改：强制分步拆解，确保步骤完整
+    # ===================== 多轮天气指令识别（核心修复：访问m_tools.last_city） =====================
+    input_clean = user_input.strip().lower()
+    if input_clean in ["明天", "明天呢", "后天", "后天呢", "昨天", "昨天呢"]:
+        # 访问m_tools模块中的last_city，获取最新值
+        if not m_tools.last_city:
+            return "⚠️ 请先查询一个城市的天气（如：上海天气），再问明天/后天哦～"
+        offset_map = {
+            "明天": 1, "明天呢": 1,
+            "后天": 2, "后天呢": 2,
+            "昨天": -1, "昨天呢": -1
+        }
+        offset_days = offset_map[input_clean]
+        # 复用m_tools.last_city查询预报
+        return call_tool("get_weather", {"city": m_tools.last_city, "offset_days": offset_days})
+    
+    # ===================== 原有逻辑：强制分步拆解（完全保留） =====================
     step_prompt = """你是专业的行程规划拆解专家，必须严格按照以下规则拆解用户需求：
 1. 核心规则：只要需求包含行程规划（城市+行李+路程+日期），必须分步调用以下4个工具，缺一不可：
    - get_weather：查询目的地实时天气（必填参数：city）
@@ -196,21 +208,21 @@ get_travel_preparation(city="上海", weight=2.0, distance=300.0, travel_date="2
     final_answer = integrate_results(user_input, tool_results)
     return final_answer
 
-# ===================== 交互主函数 =====================
+# ===================== 交互主函数（完全保留） =====================
 def main():
     """用户交互入口，支持持续对话"""
     print("=" * 80)
-    print("🤖 AI 行程规划助手（完整拆解版）")
+    print("🤖 AI 行程规划助手")
     print("=" * 80)
     print("📌 支持的功能：")
-    print("  1. 查询城市实时天气（上海、北京、济南等）")
+    print("  1. 查询城市实时天气/预报（上海、北京、济南等）")
     print("  2. 计算行李快递费（重量+距离）")
     print("  3. 查询日期/星期（今天/明天/昨天）")
     print("  4. 生成出行建议（结合天气/行李/路程）")
     print("  5. 管理购物清单（添加/查看/移除/清空）")
     print("📌 示例指令：")
     print("  - 帮我规划去上海的行程，带2kg行李，路程300km，明天出发")
-    print("  - 查询上海的实时天气，计算3kg行李运输500km的快递费")
+    print("  - 上海天气 → 明天呢（多轮查询）")
     print("  - 添加雨伞到购物清单，查看当前清单")
     print("📌 退出指令：exit / 退出 / q / quit")
     print("=" * 80)
