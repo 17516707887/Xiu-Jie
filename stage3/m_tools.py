@@ -1,6 +1,5 @@
 """
-工具函数模块 - 高德实时天气版（完整无删减）
-核心：使用高德地图API获取100%实时天气，所有工具逻辑完整可用
+工具函数模块 - 高德实时天气+预报版
 文件名：m_tools.py
 """
 import requests
@@ -12,19 +11,19 @@ SUPPORTED_CITIES = [
     "南京", "杭州", "广州", "深圳", "武汉", "成都"
 ]
 
-# 你提供的高德地图API Key（已填入）
+# 高德地图API Key（替换为自己的，或保持原有）
 AMAP_KEY = "3c7234efc680b152b5cfa7b9ebd2633d"
-# 高德实时天气接口（直接传城市名，无需经纬度）
+# 高德天气接口（直接传城市名）
 AMAP_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
 
-# 全局状态：购物清单和历史查询城市
+# 全局状态：购物清单 + 多轮天气核心变量（重点修复）
 shopping_list = []
-last_city = None
+last_city = None  # 保存上一次查询的城市（全局变量，跨函数共享）
 
-# ===================== 核心工具：实时天气查询（无模拟） =====================
-def get_weather(city: str = None, **kwargs) -> str:
-    global last_city
-    # 空值/上下文处理
+# ===================== 核心工具：实时天气+预报查询（支持多轮） =====================
+def get_weather(city: str = None, offset_days: int = 0, **kwargs) -> str:
+    global last_city  # 声明使用全局变量
+    # 空值/上下文处理：复用上次查询的城市
     if not city or city.strip() == "":
         prompt = "⚠️ 请输入要查询的城市（如上海、北京）"
         return prompt if not last_city else f"⚠️ 上次查询的是{last_city}，输入“是”可继续查询"
@@ -38,43 +37,57 @@ def get_weather(city: str = None, **kwargs) -> str:
     if city_clean not in SUPPORTED_CITIES:
         return f"❌ 暂不支持【{city_clean}】的天气查询，支持列表：{', '.join(SUPPORTED_CITIES)}"
     
-    # 调用高德实时天气接口（核心修复：直接传城市名）
     try:
+        # 根据offset_days选择接口类型：0=实时（base），>0=预报（all）
+        extensions = "base" if offset_days == 0 else "all"
         response = requests.get(
             url=AMAP_WEATHER_URL,
             params={
-                "city": city_clean,       # 直接传城市名，无需经纬度
+                "city": city_clean,       # 直接传城市名
                 "key": AMAP_KEY,          # 你的API Key
-                "extensions": "base",     # base=实时天气，all=实时+预报
+                "extensions": extensions, # base=实时，all=实时+预报
                 "output": "json"          # 返回JSON格式
             },
             timeout=10,
             headers={"User-Agent": "Mozilla/5.0"}
         )
-        response.raise_for_status()  # 触发HTTP错误（如403/500）
+        response.raise_for_status()
         weather_data = response.json()
         
         # 校验接口返回结果
-        if weather_data.get("status") != "1" or not weather_data.get("lives"):
-            return f"⚠️ 高德接口未返回{city_clean}的实时天气数据"
+        if weather_data.get("status") != "1":
+            return f"⚠️ 高德接口调用失败：{weather_data.get('info', '未知错误')}"
         
-        # 解析实时天气（100%真实数据）
-        live_data = weather_data["lives"][0]
-        weather_desc = live_data["weather"]       # 实时天气（晴/多云/雨等）
-        temperature = live_data["temperature"]    # 实时温度
-        wind_dir = live_data["winddirection"]     # 风向
-        wind_power = live_data["windpower"]       # 风力
-        humidity = live_data["humidity"]          # 湿度
+        # 实时天气（offset_days=0）
+        if offset_days == 0:
+            if not weather_data.get("lives"):
+                return f"⚠️ 未获取到{city_clean}的实时天气数据"
+            live_data = weather_data["lives"][0]
+            result = (f"{city_clean} 当前实时天气：{live_data['weather']}，温度{live_data['temperature']}℃，"
+                      f"湿度{live_data['humidity']}%，{live_data['winddirection']}{live_data['windpower']}级")
+            # 重点：成功查询实时天气后，更新全局last_city
+            last_city = city_clean
+        # 预报天气（明天/后天）
+        else:
+            if not weather_data.get("forecasts"):
+                return f"⚠️ 未获取到{city_clean}的天气预报数据"
+            forecast_data = weather_data["forecasts"][0]["casts"]
+            # 校验offset_days是否在预报范围内（高德默认返回3天预报）
+            if offset_days > len(forecast_data):
+                return f"⚠️ 仅支持查询未来{len(forecast_data)}天的天气"
+            
+            # 取对应天数的预报（index=0=今天，1=明天，2=后天）
+            target_forecast = forecast_data[offset_days]
+            result = (f"{city_clean} {target_forecast['week']}（{target_forecast['date']}）天气："
+                      f"{target_forecast['dayweather']}，气温{target_forecast['daytemp']}~{target_forecast['nighttemp']}℃，"
+                      f"{target_forecast['daywind']}{target_forecast['daypower']}级")
         
-        last_city = city_clean
-        return (f"{city_clean} 当前实时天气：{weather_desc}，温度{temperature}℃，"
-                f"湿度{humidity}%，{wind_dir}{wind_power}级")
+        return result
     
     except Exception as e:
-        # 仅返回真实错误，无任何模拟数据
-        return f"⚠️ 实时天气查询失败：{str(e)[:25]}（请检查API Key有效性）"
+        return f"⚠️ 天气查询失败：{str(e)[:25]}（请检查API Key有效性）"
 
-# ===================== 工具2：计算行李快递费 =====================
+# ===================== 工具2：计算行李快递费（完全保留） =====================
 def calculate_express_fee(weight: float = None, distance: float = None, **kwargs) -> str:
     if weight is None or distance is None:
         return "❓ 请提供行李重量(kg)和行程距离(km)（如：weight=2，distance=300）"
@@ -90,7 +103,7 @@ def calculate_express_fee(weight: float = None, distance: float = None, **kwargs
     total_fee = 8.0 + (2.0 * weight_float) + (0.5 * (distance_float // 100))
     return f"💰 快递费计算结果：{total_fee:.2f} 元（{weight_float}kg行李，{distance_float}km路程）"
 
-# ===================== 工具3：查询日期和星期 =====================
+# ===================== 工具3：查询日期和星期（完全保留） =====================
 def get_date_info(offset_days: int = 0, **kwargs) -> str:
     try:
         offset = int(offset_days)
@@ -111,7 +124,7 @@ def get_date_info(offset_days: int = 0, **kwargs) -> str:
     else:
         return f"📅 {abs(offset)}天{'后' if offset>0 else '前'}是：{date_str} {weekday}"
 
-# ===================== 工具4：生成出行建议 =====================
+# ===================== 工具4：生成出行建议（完全保留） =====================
 def get_travel_preparation(city: str, weight: float, distance: float, travel_date: str = None, **kwargs) -> str:
     # 先获取实时天气
     weather_info = get_weather(city)
@@ -150,7 +163,7 @@ def get_travel_preparation(city: str, weight: float, distance: float, travel_dat
     date_suffix = f"（{travel_date}）" if travel_date else ""
     return f"✈️ 去{city}{date_suffix}的出行建议：携带{items}，{weather_info}"
 
-# ===================== 工具5-8：购物清单管理 =====================
+# ===================== 工具5-8：购物清单管理（完全保留） =====================
 def add_shopping_item(item: str = None, **kwargs) -> str:
     if not item or item.strip() == "":
         return "❓ 请输入要添加的商品名称（如：雨伞、充电宝）"
@@ -180,17 +193,18 @@ def clear_shopping_list(**kwargs) -> str:
     shopping_list.clear()
     return f"🧹 已清空购物清单，共移除{count}项商品"
 
-# ===================== 工具注册表（完整，与agent_stage3.py匹配） =====================
+# ===================== 工具注册表（完全保留） =====================
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "查询城市实时天气（支持上海、北京、济南等城市）",
+            "description": "查询城市实时天气/预报（offset_days=0=实时，1=明天，2=后天）",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "city": {"type": "string", "description": "要查询的城市名称（如上海、北京）"}
+                    "city": {"type": "string", "description": "要查询的城市名称"},
+                    "offset_days": {"type": "integer", "description": "偏移天数，0=实时，1=明天，2=后天"}
                 },
                 "required": ["city"]
             }
@@ -200,12 +214,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "calculate_express_fee",
-            "description": "根据行李重量和行程距离计算快递费",
+            "description": "计算行李快递费（重量+距离）",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "weight": {"type": "number", "description": "行李重量（单位：kg）"},
-                    "distance": {"type": "number", "description": "行程距离（单位：km）"}
+                    "weight": {"type": "number", "description": "行李重量(kg)"},
+                    "distance": {"type": "number", "description": "行程距离(km)"}
                 },
                 "required": ["weight", "distance"]
             }
@@ -215,7 +229,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_date_info",
-            "description": "查询指定偏移天数的日期和星期（0=今天，1=明天，-1=昨天）",
+            "description": "查询日期/星期（offset_days=0=今天，1=明天）",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -229,14 +243,14 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_travel_preparation",
-            "description": "根据城市、行李重量、路程生成出行建议（可选出行日期）",
+            "description": "生成出行建议（城市+重量+路程）",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "city": {"type": "string", "description": "目的地城市"},
                     "weight": {"type": "number", "description": "行李重量(kg)"},
                     "distance": {"type": "number", "description": "行程距离(km)"},
-                    "travel_date": {"type": "string", "description": "出行日期（可选，如2026年03月04日）"}
+                    "travel_date": {"type": "string", "description": "出行日期（可选）"}
                 },
                 "required": ["city", "weight", "distance"]
             }
@@ -250,7 +264,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "item": {"type": "string", "description": "要添加的商品名称"}
+                    "item": {"type": "string", "description": "商品名称"}
                 },
                 "required": ["item"]
             }
@@ -260,7 +274,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_shopping_list",
-            "description": "查看当前购物清单",
+            "description": "查看购物清单",
             "parameters": {"type": "object", "properties": {}, "required": []}
         }
     },
@@ -268,11 +282,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "remove_shopping_item",
-            "description": "从购物清单移除指定商品",
+            "description": "移除购物清单商品",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "item": {"type": "string", "description": "要移除的商品名称"}
+                    "item": {"type": "string", "description": "商品名称"}
                 },
                 "required": ["item"]
             }
